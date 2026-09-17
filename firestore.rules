@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isTaskValid(data) {
+      return data.keys().hasAll(['title', 'startTime', 'endTime', 'status', 'userId', 'createdAt']) &&
+        data.title is string && data.title.size() <= 300 &&
+        data.startTime is number &&
+        data.endTime is number &&
+        data.status is string && (data.status == 'DRAFT' || data.status == 'PINNED' || data.status == 'DONE' || data.status == 'REJECTED') &&
+        data.userId is string && data.userId == request.auth.uid &&
+        data.createdAt is number &&
+        (
+          !('description' in data) || (data.description is string && data.description.size() <= 2000)
+        ) &&
+        (
+          !('priority' in data) || data.priority is number
+        ) &&
+        (
+          !('notified' in data) || data.notified is bool
+        );
+    }
+    
+    function isTaskUpdateValid(data) {
+       // Validate types for fields that might be updated without requiring ALL of them
+       return (!('title' in data) || (data.title is string && data.title.size() <= 300)) &&
+              (!('startTime' in data) || data.startTime is number) &&
+              (!('endTime' in data) || data.endTime is number) &&
+              (!('status' in data) || (data.status is string && (data.status == 'DRAFT' || data.status == 'PINNED' || data.status == 'DONE' || data.status == 'REJECTED'))) &&
+              (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+              (!('priority' in data) || data.priority is number) &&
+              (!('notified' in data) || data.notified is bool) &&
+              (!('userId' in data) || data.userId == request.auth.uid) &&
+              (!('createdAt' in data) || data.createdAt is number);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(taskId) && isTaskValid(incoming());
+      
+      // using isTaskUpdateValid since affectedKeys check handles the list of allowed keys, 
+      // but we still want to ensure whatever is there is the right type.
+      allow update: if isSignedIn() && 
+         isValidId(taskId) && 
+         existing().userId == request.auth.uid &&
+         isTaskUpdateValid(incoming()) &&
+         incoming().userId == existing().userId && 
+         incoming().createdAt == existing().createdAt &&
+         // Allow any typical UI edits. We can just use hasAny to make sure they're modifying safe keys.
+         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'startTime', 'endTime', 'status', 'priority', 'notified']);
+         
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // Memories
+    function isMemoryValid(data) {
+       return data.keys().hasAll(['content', 'userId', 'timestamp']) &&
+          data.content is string && data.content.size() <= 5000 &&
+          data.userId == request.auth.uid &&
+          data.timestamp is number;
+    }
+    match /memories/{memoryId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(memoryId) && isMemoryValid(incoming());
+      allow update: if false; // append-only or delete-only
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // Users
+    function isUserProfile(data) {
+       return (!('habits' in data) || (data.habits is list && data.habits.size() <= 100 && (data.habits.size() == 0 || data.habits[0] is string)));
+    }
+    match /users/{userId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+      allow create: if isSignedIn() && userId == request.auth.uid && isUserProfile(incoming());
+      allow update: if isSignedIn() && userId == request.auth.uid && isUserProfile(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['habits']);
+      allow delete: if false;
+    }
+  }
+}

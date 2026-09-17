@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A task in the user's schedule.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "startTime": { "type": "number", "description": "Unix timestamp in ms" },
+        "endTime": { "type": "number", "description": "Unix timestamp in ms" },
+        "status": { "type": "string", "enum": ["DRAFT", "PINNED", "DONE", "REJECTED"] },
+        "priority": { "type": "number" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "number", "description": "Unix timestamp in ms" },
+        "notified": { "type": "boolean" }
+      },
+      "required": ["title", "startTime", "endTime", "status", "userId", "createdAt"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "An unstructured memory for the AI context.",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "userId": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["content", "userId", "timestamp"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User specific data like habits.",
+      "type": "object",
+      "properties": {
+        "habits": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "firestore": {
+    "tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Stores user tasks."
+    },
+    "memories/{memoryId}": {
+      "schema": "Memory",
+      "description": "Stores user memories / conversational context."
+    },
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profile and habits."
+    }
+  }
+}
